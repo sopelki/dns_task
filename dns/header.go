@@ -42,7 +42,8 @@ ARCount - Количество дополнительных записей в с
 */
 
 func ParseHeader(data []byte) (*Header, error) {
-	if len(data) < 12 {
+	// Заголовок должен ровно 12 байт
+	if len(data) < 12 { 
 		return nil, ErrPacketTooShort
 	}
 

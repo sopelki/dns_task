@@ -46,7 +46,7 @@ func NewResolver(timeout time.Duration) *Resolver {
 func (r *Resolver) Query(server string, question dns.Question) (*dns.Message, error) {
 	var id uint16
 	if err := binary.Read(rand.Reader, binary.BigEndian, &id); err != nil {
-		id = 1234 // На всякий случай, если не получилось взять рандомное число.
+		id = 1234 // Если не получилось взять рандомное число.
 	}
 
 	m := dns.NewMessage()
