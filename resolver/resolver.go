@@ -10,6 +10,12 @@ import (
 	"dns_task/dns"
 )
 
+const (
+	maxDepth   = 8  // глубина вложенных Resolve (CNAME, NS без glue)
+	maxQueries = 30 // всего запросов к серверам на один клиентский вызов
+)
+
+
 var (
 	ErrNoAnswers       = errors.New("no answers and no authority records found")
 	ErrMaxHopsExceeded = errors.New("maximum iterative hops exceeded")
@@ -21,6 +27,10 @@ var RootServers = []string{
 	"192.33.4.12",
 	"199.7.91.13",
 	"192.203.230.10",
+}
+
+type lookup struct {
+	queries int
 }
 
 type Resolver struct {
@@ -81,21 +91,22 @@ func (r *Resolver) Query(server string, question dns.Question) (*dns.Message, er
 }
 
 func (r *Resolver) Resolve(domain string, qtype dns.Type) (*dns.Message, error) {
-	currentServer := RootServers[0]
-	hops := 0
-	maxHops := 25
+	return r.resolve(domain, qtype, 0, &lookup{})
+}
 
-	question := dns.Question{
-		Name:  domain,
-		Type:  qtype,
-		Class: dns.ClassINET,
+func (r *Resolver) resolve(domain string, qtype dns.Type, depth int, lk *lookup) (*dns.Message, error) {
+	if depth > maxDepth {
+		return nil, ErrMaxHopsExceeded
 	}
 
+	currentServer := RootServers[0]
+	question := dns.Question{Name: domain, Type: qtype, Class: dns.ClassINET}
+
 	for {
-		if hops > maxHops {
+		lk.queries++
+		if lk.queries > maxQueries {
 			return nil, ErrMaxHopsExceeded
 		}
-		hops++
 
 		resp, err := r.Query(currentServer, question)
 		if err != nil {
@@ -108,27 +119,23 @@ func (r *Resolver) Resolve(domain string, qtype dns.Type) (*dns.Message, error) 
 
 		if len(resp.Answers) > 0 {
 			var cnameTarget string
-			hasTargetType := false
-
 			for _, ans := range resp.Answers {
 				if ans.Type == qtype {
-					hasTargetType = true
+					return resp, nil
 				}
 				if ans.Type == dns.TypeCNAME {
 					cnameTarget = ans.Text
 				}
 			}
 
-			if hasTargetType {
-				return resp, nil
-			}
-
 			if cnameTarget != "" {
-				cnameResp, err := r.Resolve(cnameTarget, qtype)
+				cnameResp, err := r.resolve(cnameTarget, qtype, depth+1, lk)
 				if err != nil {
 					return nil, err
 				}
 				resp.Answers = append(resp.Answers, cnameResp.Answers...)
+				resp.Authorities = cnameResp.Authorities
+				resp.Header.RCode = cnameResp.Header.RCode // NXDOMAIN цели не должен стать NOERROR
 				return resp, nil
 			}
 		}
@@ -147,54 +154,36 @@ func (r *Resolver) Resolve(domain string, qtype dns.Type) (*dns.Message, error) 
 			return resp, nil // NODATA
 		}
 
+		// Сначала glue из Additional.
 		nextIP := ""
 		for _, add := range resp.Additionals {
 			if add.Type == dns.TypeA {
-				ip := add.IP()
-				if ip != nil {
+				if ip := add.IP(); ip != nil {
 					nextIP = ip.String()
 					break
 				}
 			}
 		}
 
-		if nextIP != "" {
-			currentServer = nextIP
-			continue
-		}
-
-		if len(resp.Authorities) > 0 {
-			var nsDomain string
-			for _, auth := range resp.Authorities {
-				if auth.Type == dns.TypeNS {
-					nsDomain = auth.Text
-					break
-				}
+		// Glue нет, резолвим имя первого NS.
+		if nextIP == "" {
+			nsResp, err := r.resolve(nsRecords[0].Text, dns.TypeA, depth+1, lk)
+			if err != nil {
+				return nil, err
 			}
-
-			if nsDomain != "" {
-				nsResp, err := r.Resolve(nsDomain, dns.TypeA)
-				if err != nil {
-					return nil, err
-				}
-
-				for _, ans := range nsResp.Answers {
-					if ans.Type == dns.TypeA {
-						ip := ans.IP()
-						if ip != nil {
-							nextIP = ip.String()
-							break
-						}
+			for _, ans := range nsResp.Answers {
+				if ans.Type == dns.TypeA {
+					if ip := ans.IP(); ip != nil {
+						nextIP = ip.String()
+						break
 					}
 				}
-
-				if nextIP != "" {
-					currentServer = nextIP
-					continue
-				}
 			}
 		}
 
-		return nil, ErrNoAnswers
+		if nextIP == "" {
+			return nil, ErrNoAnswers
+		}
+		currentServer = nextIP
 	}
 }
