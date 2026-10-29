@@ -70,7 +70,14 @@ func (r *Resolver) Query(server string, question dns.Question) (*dns.Message, er
 		return nil, err
 	}
 
-	return dns.ParseMessage(buf[:n])
+	resp, err := dns.ParseMessage(buf[:n])
+	if err != nil {
+		return nil, err
+	}
+	if resp.Header.ID != id || !resp.Header.QR {
+		return nil, errors.New("unexpected response")
+	}
+	return resp, nil
 }
 
 func (r *Resolver) Resolve(domain string, qtype dns.Type) (*dns.Message, error) {
@@ -128,6 +135,16 @@ func (r *Resolver) Resolve(domain string, qtype dns.Type) (*dns.Message, error) 
 
 		if resp.Header.RCode == dns.RCodeNameError {
 			return resp, nil
+		}
+
+		var nsRecords []dns.Record
+		for _, a := range resp.Authorities {
+			if a.Type == dns.TypeNS {
+				nsRecords = append(nsRecords, a)
+			}
+		}
+		if len(nsRecords) == 0 {
+			return resp, nil // NODATA
 		}
 
 		nextIP := ""

@@ -3,6 +3,7 @@ package dns
 import (
 	"encoding/binary"
 	"net"
+	"strings"
 )
 
 type Question struct {
@@ -66,6 +67,18 @@ func NewMessage() *Message {
 		Authorities: make([]Record, 0),
 		Additionals: make([]Record, 0),
 	}
+}
+
+func encodeName(name string) []byte { // имя без сжатия
+	var out []byte
+	for _, l := range strings.Split(strings.Trim(name, "."), ".") {
+		if l == "" {
+			continue
+		}
+		out = append(out, byte(len(l)))
+		out = append(out, l...)
+	}
+	return append(out, 0)
 }
 
 func (b *Buffer) ReadQuestion() (*Question, error) {
@@ -140,6 +153,30 @@ func (b *Buffer) ReadRecord() (*Record, error) {
 			return nil, err
 		}
 		rec.Text = target
+	case TypeMX:
+		pref, err := b.ReadUint16()
+		if err != nil {
+			return nil, err
+		}
+		name, err := b.ReadName()
+		if err != nil {
+			return nil, err
+		}
+		rec.Data = append([]byte{byte(pref >> 8), byte(pref)}, encodeName(name)...)
+	case TypeSOA:
+		mname, err := b.ReadName()
+		if err != nil {
+			return nil, err
+		}
+		rname, err := b.ReadName()
+		if err != nil {
+			return nil, err
+		}
+		tail, err := b.ReadBytes(20) // serial, refresh, retry, expire, minimum
+		if err != nil {
+			return nil, err
+		}
+		rec.Data = append(append(encodeName(mname), encodeName(rname)...), tail...)
 	default:
 		data, err := b.ReadBytes(int(rdLength))
 		if err != nil {
@@ -191,10 +228,10 @@ func ParseMessage(data []byte) (*Message, error) {
 
 	m := &Message{
 		Header:      *header,
-		Questions:   make([]Question, 0, header.QDCount),
-		Answers:     make([]Record, 0, header.ANCount),
-		Authorities: make([]Record, 0, header.NSCount),
-		Additionals: make([]Record, 0, header.ARCount),
+		Questions:   make([]Question, 0),
+		Answers:     make([]Record, 0),
+		Authorities: make([]Record, 0),
+		Additionals: make([]Record, 0),
 	}
 
 	for i := 0; i < int(header.QDCount); i++ {
