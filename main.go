@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"dns_task/dns"
@@ -24,7 +26,7 @@ func main() {
 	defer conn.Close()
 
 	fmt.Printf("DNS-сервер запущен на порту %d (udp)\n", port)
-	fmt.Printf("dig @127.0.0.1 -p %d google.com\n\n", port)
+	// fmt.Printf("dig @127.0.0.1 -p %d google.com\n\n", port)
 
 	r := resolver.NewResolver(3 * time.Second)
 
@@ -57,6 +59,19 @@ func handlePacket(conn *net.UDPConn, clientAddr *net.UDPAddr, data []byte, r *re
 	q := req.Questions[0]
 	log.Printf("Запрос от %s: %s (Type: %d)", clientAddr, q.Name, q.Type)
 
+	if multiplyResp := handleMultiply(q); multiplyResp != nil {
+		multiplyResp.Header.ID = req.Header.ID
+		respBytes, err := multiplyResp.Bytes()
+		if err != nil {
+			log.Printf("failed to serialize synthetic response: %v", err)
+			return
+		}
+		if _, err := conn.WriteToUDP(respBytes, clientAddr); err != nil {
+			log.Printf("write error to %s: %v", clientAddr, err)
+		}
+		return
+	}
+
 	resp, err := r.Resolve(q.Name, q.Type)
 
 	out := dns.NewMessage()
@@ -83,4 +98,61 @@ func handlePacket(conn *net.UDPConn, clientAddr *net.UDPAddr, data []byte, r *re
 	if _, err := conn.WriteToUDP(respBytes, clientAddr); err != nil {
 		log.Printf("write error to %s: %v", clientAddr, err)
 	}
+}
+
+func handleMultiply(q dns.Question) *dns.Message {
+	name := strings.ToLower(q.Name)
+	if !strings.Contains(name, ".multiply.") {
+		return nil
+	}
+
+	parts := strings.Split(name, ".")
+	multIdx := -1
+	for i, part := range parts {
+		if part == "multiply" {
+			multIdx = i
+			break
+		}
+	}
+
+	if multIdx <= 0 {
+		return nil
+	}
+
+	product := 1
+	hasNumbers := false
+
+	for i := 0; i < multIdx; i++ {
+		val, err := strconv.Atoi(parts[i])
+		if err != nil {
+			continue
+		}
+		product = (product * val) % 256
+		hasNumbers = true
+	}
+
+	if !hasNumbers {
+		return nil
+	}
+
+	x := byte(product)
+
+	m := dns.NewMessage()
+	m.Header.QR = true
+	m.Header.AA = true
+	m.Header.RA = true
+	m.Header.RCode = dns.RCodeNoError
+	m.Questions = append(m.Questions, q)
+
+	if q.Type == dns.TypeA {
+		m.Answers = append(m.Answers, dns.Record{
+			Name:  q.Name,
+			Type:  dns.TypeA,
+			Class: dns.ClassINET,
+			TTL:   60,
+			Data:  []byte{127, 0, 0, x},
+		})
+	}
+
+	return m
 }
