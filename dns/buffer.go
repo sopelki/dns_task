@@ -15,14 +15,14 @@ var (
 )
 
 type Buffer struct {
-	Buf         []byte
+	Buffer         []byte
 	Offset      int
 	compression map[string]uint16
 }
 
 func NewBuffer(data []byte) *Buffer {
 	return &Buffer{
-		Buf:         data,
+		Buffer:         data,
 		Offset:      0,
 		compression: make(map[string]uint16),
 	}
@@ -30,51 +30,51 @@ func NewBuffer(data []byte) *Buffer {
 
 func NewEmptyBuffer() *Buffer {
 	return &Buffer{
-		Buf:         make([]byte, 0, 512),
+		Buffer:         make([]byte, 0, 512),
 		Offset:      0,
 		compression: make(map[string]uint16),
 	}
 }
 
-func (b *Buffer) ReadUint8() (uint8, error) {
-	if b.Offset >= len(b.Buf) {
+func (buffer *Buffer) ReadUint8() (uint8, error) {
+	if buffer.Offset >= len(buffer.Buffer) {
 		return 0, ErrBufferOverflow
 	}
-	val := b.Buf[b.Offset]
-	b.Offset++
-	return val, nil
+	value := buffer.Buffer[buffer.Offset]
+	buffer.Offset++
+	return value, nil
 }
 
-func (b *Buffer) ReadUint16() (uint16, error) {
-	if b.Offset+2 > len(b.Buf) {
+func (buffer *Buffer) ReadUint16() (uint16, error) {
+	if buffer.Offset+2 > len(buffer.Buffer) {
 		return 0, ErrBufferOverflow
 	}
-	val := binary.BigEndian.Uint16(b.Buf[b.Offset : b.Offset+2])
-	b.Offset += 2
-	return val, nil
+	value := binary.BigEndian.Uint16(buffer.Buffer[buffer.Offset : buffer.Offset+2])
+	buffer.Offset += 2
+	return value, nil
 }
 
-func (b *Buffer) ReadUint32() (uint32, error) {
-	if b.Offset+4 > len(b.Buf) {
+func (buffer *Buffer) ReadUint32() (uint32, error) {
+	if buffer.Offset+4 > len(buffer.Buffer) {
 		return 0, ErrBufferOverflow
 	}
-	val := binary.BigEndian.Uint32(b.Buf[b.Offset : b.Offset+4])
-	b.Offset += 4
-	return val, nil
+	value := binary.BigEndian.Uint32(buffer.Buffer[buffer.Offset : buffer.Offset+4])
+	buffer.Offset += 4
+	return value, nil
 }
 
-func (b *Buffer) ReadBytes(length int) ([]byte, error) {
-	if b.Offset+length > len(b.Buf) {
+func (buffer *Buffer) ReadBytes(length int) ([]byte, error) {
+	if buffer.Offset+length > len(buffer.Buffer) {
 		return nil, ErrBufferOverflow
 	}
 	out := make([]byte, length)
-	copy(out, b.Buf[b.Offset:b.Offset+length])
-	b.Offset += length
+	copy(out, buffer.Buffer[buffer.Offset:buffer.Offset+length])
+	buffer.Offset += length
 	return out, nil
 }
 
-func (b *Buffer) ReadName() (string, error) {
-	pos := b.Offset
+func (buffer *Buffer) ReadName() (string, error) {
+	position := buffer.Offset
 	jumped := false
 	maxJumps := MaxJumps
 	jumps := 0
@@ -86,79 +86,79 @@ func (b *Buffer) ReadName() (string, error) {
 			return "", ErrPointerCycle
 		}
 
-		if pos >= len(b.Buf) {
+		if position >= len(buffer.Buffer) {
 			return "", ErrBufferOverflow
 		}
 
-		lengthByte := b.Buf[pos]
+		lengthByte := buffer.Buffer[position]
 		if (lengthByte & 0xC0) == 0xC0 { // 0xC0: 11000000 (проверяем, что встретили указатель)
-			if pos+1 >= len(b.Buf) {
+			if position+1 >= len(buffer.Buffer) {
 				return "", ErrBufferOverflow
 			}
 
 			if !jumped {
-				b.Offset = pos + 2
+				buffer.Offset = position + 2
 				jumped = true
 			}
 
-			pointerVal := binary.BigEndian.Uint16(b.Buf[pos : pos+2])
+			pointerVal := binary.BigEndian.Uint16(buffer.Buffer[position : position+2])
 			targetOffset := int(pointerVal & 0x3FFF) // 0x3FFF: 00111111 11111111 (убираем первые два бита)
 
-			pos = targetOffset
+			position = targetOffset
 			jumps++
 			continue
 		}
 
-		pos++
+		position++
 
 		if lengthByte == 0 {
 			break
 		}
 
 		labelLen := int(lengthByte)
-		if pos+labelLen > len(b.Buf) {
+		if position+labelLen > len(buffer.Buffer) {
 			return "", ErrBufferOverflow
 		}
 
-		labels = append(labels, string(b.Buf[pos:pos+labelLen]))
-		pos += labelLen
+		labels = append(labels, string(buffer.Buffer[position:position+labelLen]))
+		position += labelLen
 	}
 
 	if !jumped {
-		b.Offset = pos
+		buffer.Offset = position
 	}
 
 	return strings.Join(labels, "."), nil
 }
 
-func (b *Buffer) WriteUint8(val uint8) {
-	b.Buf = append(b.Buf, val)
-	b.Offset++
+func (buffer *Buffer) WriteUint8(val uint8) {
+	buffer.Buffer = append(buffer.Buffer, val)
+	buffer.Offset++
 }
 
-func (b *Buffer) WriteUint16(val uint16) {
+func (buffer *Buffer) WriteUint16(val uint16) {
 	bytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(bytes, val)
-	b.Buf = append(b.Buf, bytes...)
-	b.Offset += 2
+	buffer.Buffer = append(buffer.Buffer, bytes...)
+	buffer.Offset += 2
 }
 
-func (b *Buffer) WriteUint32(val uint32) {
+func (buffer *Buffer) WriteUint32(val uint32) {
 	bytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(bytes, val)
-	b.Buf = append(b.Buf, bytes...)
-	b.Offset += 4
+	buffer.Buffer = append(buffer.Buffer, bytes...)
+	buffer.Offset += 4
 }
 
-func (b *Buffer) WriteBytes(data []byte) {
-	b.Buf = append(b.Buf, data...)
-	b.Offset += len(data)
+func (buffer *Buffer) WriteBytes(data []byte) {
+	buffer.Buffer = append(buffer.Buffer, data...)
+	buffer.Offset += len(data)
 }
 
-func (b *Buffer) WriteName(name string) error {
+func (buffer *Buffer) WriteName(name string) error {
 	normalized := strings.Trim(strings.ToLower(name), ".")
 	if normalized == "" {
-		b.WriteUint8(0)
+		buffer.WriteUint8(0)
 		return nil
 	}
 
@@ -167,14 +167,14 @@ func (b *Buffer) WriteName(name string) error {
 	for i := 0; i < len(parts); i++ {
 		subDomain := strings.Join(parts[i:], ".")
 
-		if offset, exists := b.compression[subDomain]; exists { // Идем по суффиксам
+		if offset, exists := buffer.compression[subDomain]; exists { // Идем по суффиксам
 			pointer := 0xC000 | offset // Выставляем первые два бита 11 и пишем указатель
-			b.WriteUint16(pointer)
+			buffer.WriteUint16(pointer)
 			return nil
 		}
 
-		if len(b.Buf) < 0x3FFF { // Проверяем, что смещение укладывается в 14 бит
-			b.compression[subDomain] = uint16(len(b.Buf))
+		if len(buffer.Buffer) < 0x3FFF { // Проверяем, что смещение укладывается в 14 бит
+			buffer.compression[subDomain] = uint16(len(buffer.Buffer))
 		}
 
 		label := parts[i]
@@ -182,14 +182,14 @@ func (b *Buffer) WriteName(name string) error {
 			return ErrLabelTooLong
 		}
 
-		b.WriteUint8(uint8(len(label)))
-		b.WriteBytes([]byte(label))
+		buffer.WriteUint8(uint8(len(label)))
+		buffer.WriteBytes([]byte(label))
 	}
 
-	b.WriteUint8(0)
+	buffer.WriteUint8(0)
 	return nil
 }
 
-func (b *Buffer) Bytes() []byte {
-	return b.Buf
+func (buffer *Buffer) Bytes() []byte {
+	return buffer.Buffer
 }

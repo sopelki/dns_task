@@ -14,12 +14,12 @@ import (
 
 func main() {
 	port := 1053 // 1053 вместо 53 для использования без sudo.
-	addr := net.UDPAddr{
+	address := net.UDPAddr{
 		Port: port,
 		IP:   net.ParseIP("0.0.0.0"), // Слушает все порты.
 	}
 
-	conn, err := net.ListenUDP("udp", &addr)
+	conn, err := net.ListenUDP("udp", &address)
 	if err != nil {
 		log.Fatalf("failed to bind UDP port %d: %v", port, err)
 	}
@@ -46,21 +46,21 @@ func main() {
 }
 
 func handlePacket(conn *net.UDPConn, clientAddr *net.UDPAddr, data []byte, r *resolver.Resolver) {
-	req, err := dns.ParseMessage(data)
+	request, err := dns.ParseMessage(data)
 	if err != nil {
 		log.Printf("failed to parse message from %s: %v", clientAddr, err)
 		return
 	}
 
-	if len(req.Questions) == 0 {
+	if len(request.Questions) == 0 {
 		return
 	}
 
-	q := req.Questions[0]
-	log.Printf("Запрос от %s: %s (Type: %d)", clientAddr, q.Name, q.Type)
+	question := request.Questions[0]
+	log.Printf("Запрос от %s: %s (Type: %d)", clientAddr, question.Name, question.Type)
 
-	if multiplyResp := handleMultiply(q); multiplyResp != nil {
-		multiplyResp.Header.ID = req.Header.ID
+	if multiplyResp := handleMultiply(question); multiplyResp != nil {
+		multiplyResp.Header.ID = request.Header.ID
 		respBytes, err := multiplyResp.Bytes()
 		if err != nil {
 			log.Printf("failed to serialize synthetic response: %v", err)
@@ -72,16 +72,16 @@ func handlePacket(conn *net.UDPConn, clientAddr *net.UDPAddr, data []byte, r *re
 		return
 	}
 
-	resp, err := r.Resolve(q.Name, q.Type)
+	resp, err := r.Resolve(question.Name, question.Type)
 
 	out := dns.NewMessage()
-	out.Header.ID = req.Header.ID
+	out.Header.ID = request.Header.ID
 	out.Header.QR = true
 	out.Header.RA = true
-	out.Questions = append(out.Questions, q)
+	out.Questions = append(out.Questions, question)
 
 	if err != nil {
-		log.Printf("resolve error for %s: %v", q.Name, err)
+		log.Printf("resolve error for %s: %v", question.Name, err)
 		out.Header.RCode = dns.RCodeServerFailure
 	} else {
 		out.Header.RCode = resp.Header.RCode
@@ -137,15 +137,15 @@ func handleMultiply(q dns.Question) *dns.Message {
 
 	x := byte(product)
 
-	m := dns.NewMessage()
-	m.Header.QR = true
-	m.Header.AA = true
-	m.Header.RA = true
-	m.Header.RCode = dns.RCodeNoError
-	m.Questions = append(m.Questions, q)
+	message := dns.NewMessage()
+	message.Header.QR = true
+	message.Header.AA = true
+	message.Header.RA = true
+	message.Header.RCode = dns.RCodeNoError
+	message.Questions = append(message.Questions, q)
 
 	if q.Type == dns.TypeA {
-		m.Answers = append(m.Answers, dns.Record{
+		message.Answers = append(message.Answers, dns.Record{
 			Name:  q.Name,
 			Type:  dns.TypeA,
 			Class: dns.ClassINET,
@@ -154,5 +154,5 @@ func handleMultiply(q dns.Question) *dns.Message {
 		})
 	}
 
-	return m
+	return message
 }

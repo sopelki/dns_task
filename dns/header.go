@@ -68,36 +68,36 @@ func ParseHeader(data []byte) (*Header, error) {
 	return h, nil
 }
 
-func (h *Header) Bytes() []byte {
-	buf := make([]byte, 12)
+func (header *Header) Bytes() []byte {
+	buffer := make([]byte, 12)
 
-	binary.BigEndian.PutUint16(buf[0:2], h.ID)
+	binary.BigEndian.PutUint16(buffer[0:2], header.ID)
 
 	var flags uint16
-	if h.QR {
+	if header.QR {
 		flags |= 1 << 15
 	}
-	flags |= (uint16(h.Opcode) & 0b1111) << 11
-	if h.AA {
+	flags |= (uint16(header.Opcode) & 0b1111) << 11
+	if header.AA {
 		flags |= 1 << 10
 	}
-	if h.TC {
+	if header.TC {
 		flags |= 1 << 9
 	}
-	if h.RD {
+	if header.RD {
 		flags |= 1 << 8
 	}
-	if h.RA {
+	if header.RA {
 		flags |= 1 << 7
 	}
-	flags |= (uint16(h.Z) & 0b111) << 4
-	flags |= uint16(h.RCode) & 0b1111
+	flags |= (uint16(header.Z) & 0b111) << 4
+	flags |= uint16(header.RCode) & 0b1111
 
-	binary.BigEndian.PutUint16(buf[2:4], flags)
-	binary.BigEndian.PutUint16(buf[4:6], h.QDCount)
-	binary.BigEndian.PutUint16(buf[6:8], h.ANCount)
-	binary.BigEndian.PutUint16(buf[8:10], h.NSCount)
-	binary.BigEndian.PutUint16(buf[10:12], h.ARCount)
+	binary.BigEndian.PutUint16(buffer[2:4], flags)
+	binary.BigEndian.PutUint16(buffer[4:6], header.QDCount)
+	binary.BigEndian.PutUint16(buffer[6:8], header.ANCount)
+	binary.BigEndian.PutUint16(buffer[8:10], header.NSCount)
+	binary.BigEndian.PutUint16(buffer[10:12], header.ARCount)
 
-	return buf
+	return buffer
 }

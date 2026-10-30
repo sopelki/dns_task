@@ -36,9 +36,9 @@ type Record struct {
  Text  - Текстовое доменное имя из RDATA для записей типа NS, CNAME, PTR (хранится в распакованном виде).
 */
 
-func (r *Record) IP() net.IP {
-	if r.Type == TypeA || r.Type == TypeAAAA {
-		return net.IP(r.Data)
+func (record *Record) IP() net.IP {
+	if record.Type == TypeA || record.Type == TypeAAAA {
+		return net.IP(record.Data)
 	}
 	return nil
 }
@@ -81,18 +81,18 @@ func encodeName(name string) []byte { // имя без сжатия
 	return append(out, 0)
 }
 
-func (b *Buffer) ReadQuestion() (*Question, error) {
-	name, err := b.ReadName()
+func (buffer *Buffer) ReadQuestion() (*Question, error) {
+	name, err := buffer.ReadName()
 	if err != nil {
 		return nil, err
 	}
 
-	qtype, err := b.ReadUint16()
+	qtype, err := buffer.ReadUint16()
 	if err != nil {
 		return nil, err
 	}
 
-	qclass, err := b.ReadUint16()
+	qclass, err := buffer.ReadUint16()
 	if err != nil {
 		return nil, err
 	}
@@ -104,115 +104,115 @@ func (b *Buffer) ReadQuestion() (*Question, error) {
 	}, nil
 }
 
-func (b *Buffer) WriteQuestion(q *Question) error {
-	if err := b.WriteName(q.Name); err != nil {
+func (buffer *Buffer) WriteQuestion(question *Question) error {
+	if err := buffer.WriteName(question.Name); err != nil {
 		return err
 	}
-	b.WriteUint16(uint16(q.Type))
-	b.WriteUint16(uint16(q.Class))
+	buffer.WriteUint16(uint16(question.Type))
+	buffer.WriteUint16(uint16(question.Class))
 	return nil
 }
 
-func (b *Buffer) ReadRecord() (*Record, error) {
-	name, err := b.ReadName()
+func (buffer *Buffer) ReadRecord() (*Record, error) {
+	name, err := buffer.ReadName()
 	if err != nil {
 		return nil, err
 	}
 
-	rtype, err := b.ReadUint16()
+	rtype, err := buffer.ReadUint16()
 	if err != nil {
 		return nil, err
 	}
 
-	rclass, err := b.ReadUint16()
+	rclass, err := buffer.ReadUint16()
 	if err != nil {
 		return nil, err
 	}
 
-	ttl, err := b.ReadUint32()
+	ttl, err := buffer.ReadUint32()
 	if err != nil {
 		return nil, err
 	}
 
-	rdLength, err := b.ReadUint16()
+	rdLength, err := buffer.ReadUint16()
 	if err != nil {
 		return nil, err
 	}
 
-	rec := &Record{
+	record := &Record{
 		Name:  name,
 		Type:  Type(rtype),
 		Class: Class(rclass),
 		TTL:   ttl,
 	}
 
-	switch rec.Type {
+	switch record.Type {
 	case TypeNS, TypeCNAME, TypePTR:
-		target, err := b.ReadName()
+		target, err := buffer.ReadName()
 		if err != nil {
 			return nil, err
 		}
-		rec.Text = target
+		record.Text = target
 	case TypeMX:
-		pref, err := b.ReadUint16()
+		pref, err := buffer.ReadUint16()
 		if err != nil {
 			return nil, err
 		}
-		name, err := b.ReadName()
+		name, err := buffer.ReadName()
 		if err != nil {
 			return nil, err
 		}
-		rec.Data = append([]byte{byte(pref >> 8), byte(pref)}, encodeName(name)...)
+		record.Data = append([]byte{byte(pref >> 8), byte(pref)}, encodeName(name)...)
 	case TypeSOA:
-		mname, err := b.ReadName()
+		mname, err := buffer.ReadName()
 		if err != nil {
 			return nil, err
 		}
-		rname, err := b.ReadName()
+		rname, err := buffer.ReadName()
 		if err != nil {
 			return nil, err
 		}
-		tail, err := b.ReadBytes(20) // serial, refresh, retry, expire, minimum
+		tail, err := buffer.ReadBytes(20) // serial, refresh, retry, expire, minimum
 		if err != nil {
 			return nil, err
 		}
-		rec.Data = append(append(encodeName(mname), encodeName(rname)...), tail...)
+		record.Data = append(append(encodeName(mname), encodeName(rname)...), tail...)
 	default:
-		data, err := b.ReadBytes(int(rdLength))
+		data, err := buffer.ReadBytes(int(rdLength))
 		if err != nil {
 			return nil, err
 		}
-		rec.Data = data
+		record.Data = data
 	}
 
-	return rec, nil
+	return record, nil
 }
 
-func (b *Buffer) WriteRecord(r *Record) error {
-	if err := b.WriteName(r.Name); err != nil {
+func (buffer *Buffer) WriteRecord(r *Record) error {
+	if err := buffer.WriteName(r.Name); err != nil {
 		return err
 	}
 
-	b.WriteUint16(uint16(r.Type))
-	b.WriteUint16(uint16(r.Class))
-	b.WriteUint32(r.TTL)
+	buffer.WriteUint16(uint16(r.Type))
+	buffer.WriteUint16(uint16(r.Class))
+	buffer.WriteUint32(r.TTL)
 
-	rdLenPos := len(b.Buf)
-	b.WriteUint16(0)
+	rdLenPos := len(buffer.Buffer)
+	buffer.WriteUint16(0)
 
-	dataStart := len(b.Buf)
+	dataStart := len(buffer.Buffer)
 
 	switch r.Type {
 	case TypeNS, TypeCNAME, TypePTR:
-		if err := b.WriteName(r.Text); err != nil {
+		if err := buffer.WriteName(r.Text); err != nil {
 			return err
 		}
 	default:
-		b.WriteBytes(r.Data)
+		buffer.WriteBytes(r.Data)
 	}
 
-	dataLen := len(b.Buf) - dataStart
-	binary.BigEndian.PutUint16(b.Buf[rdLenPos:rdLenPos+2], uint16(dataLen))
+	dataLen := len(buffer.Buffer) - dataStart
+	binary.BigEndian.PutUint16(buffer.Buffer[rdLenPos:rdLenPos+2], uint16(dataLen))
 
 	return nil
 }
@@ -223,10 +223,10 @@ func ParseMessage(data []byte) (*Message, error) {
 		return nil, err
 	}
 
-	buf := NewBuffer(data)
-	buf.Offset = 12
+	buffer := NewBuffer(data)
+	buffer.Offset = 12
 
-	m := &Message{
+	message := &Message{
 		Header:      *header,
 		Questions:   make([]Question, 0),
 		Answers:     make([]Record, 0),
@@ -235,73 +235,73 @@ func ParseMessage(data []byte) (*Message, error) {
 	}
 
 	for i := 0; i < int(header.QDCount); i++ {
-		q, err := buf.ReadQuestion()
+		question, err := buffer.ReadQuestion()
 		if err != nil {
 			return nil, err
 		}
-		m.Questions = append(m.Questions, *q)
+		message.Questions = append(message.Questions, *question)
 	}
 
 	for i := 0; i < int(header.ANCount); i++ {
-		r, err := buf.ReadRecord()
+		record, err := buffer.ReadRecord()
 		if err != nil {
 			return nil, err
 		}
-		m.Answers = append(m.Answers, *r)
+		message.Answers = append(message.Answers, *record)
 	}
 
 	for i := 0; i < int(header.NSCount); i++ {
-		r, err := buf.ReadRecord()
+		record, err := buffer.ReadRecord()
 		if err != nil {
 			return nil, err
 		}
-		m.Authorities = append(m.Authorities, *r)
+		message.Authorities = append(message.Authorities, *record)
 	}
 
 	for i := 0; i < int(header.ARCount); i++ {
-		r, err := buf.ReadRecord()
+		record, err := buffer.ReadRecord()
 		if err != nil {
 			return nil, err
 		}
-		m.Additionals = append(m.Additionals, *r)
+		message.Additionals = append(message.Additionals, *record)
 	}
 
-	return m, nil
+	return message, nil
 }
 
-func (m *Message) Bytes() ([]byte, error) {
-	buf := NewEmptyBuffer()
+func (message *Message) Bytes() ([]byte, error) {
+	buffer := NewEmptyBuffer()
 
-	m.Header.QDCount = uint16(len(m.Questions))
-	m.Header.ANCount = uint16(len(m.Answers))
-	m.Header.NSCount = uint16(len(m.Authorities))
-	m.Header.ARCount = uint16(len(m.Additionals))
+	message.Header.QDCount = uint16(len(message.Questions))
+	message.Header.ANCount = uint16(len(message.Answers))
+	message.Header.NSCount = uint16(len(message.Authorities))
+	message.Header.ARCount = uint16(len(message.Additionals))
 
-	buf.WriteBytes(m.Header.Bytes())
+	buffer.WriteBytes(message.Header.Bytes())
 
-	for i := range m.Questions {
-		if err := buf.WriteQuestion(&m.Questions[i]); err != nil {
+	for i := range message.Questions {
+		if err := buffer.WriteQuestion(&message.Questions[i]); err != nil {
 			return nil, err
 		}
 	}
 
-	for i := range m.Answers {
-		if err := buf.WriteRecord(&m.Answers[i]); err != nil {
+	for i := range message.Answers {
+		if err := buffer.WriteRecord(&message.Answers[i]); err != nil {
 			return nil, err
 		}
 	}
 
-	for i := range m.Authorities {
-		if err := buf.WriteRecord(&m.Authorities[i]); err != nil {
+	for i := range message.Authorities {
+		if err := buffer.WriteRecord(&message.Authorities[i]); err != nil {
 			return nil, err
 		}
 	}
 
-	for i := range m.Additionals {
-		if err := buf.WriteRecord(&m.Additionals[i]); err != nil {
+	for i := range message.Additionals {
+		if err := buffer.WriteRecord(&message.Additionals[i]); err != nil {
 			return nil, err
 		}
 	}
 
-	return buf.Bytes(), nil
+	return buffer.Bytes(), nil
 }

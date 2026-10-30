@@ -49,18 +49,18 @@ func (r *Resolver) Query(server string, question dns.Question) (*dns.Message, er
 		id = 1234 // Если не получилось взять рандомное число.
 	}
 
-	m := dns.NewMessage()
-	m.Header.ID = id
-	m.Header.RD = false
-	m.Questions = append(m.Questions, question)
+	message := dns.NewMessage()
+	message.Header.ID = id
+	message.Header.RD = false
+	message.Questions = append(message.Questions, question)
 
-	data, err := m.Bytes()
+	data, err := message.Bytes()
 	if err != nil {
 		return nil, err
 	}
 
-	addr := net.JoinHostPort(server, "53")
-	conn, err := net.DialTimeout("udp", addr, r.Timeout)
+	address := net.JoinHostPort(server, "53")
+	conn, err := net.DialTimeout("udp", address, r.Timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -74,13 +74,13 @@ func (r *Resolver) Query(server string, question dns.Question) (*dns.Message, er
 		return nil, err
 	}
 
-	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
+	buffer := make([]byte, 1024)
+	n, err := conn.Read(buffer)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := dns.ParseMessage(buf[:n])
+	resp, err := dns.ParseMessage(buffer[:n])
 	if err != nil {
 		return nil, err
 	}
