@@ -60,7 +60,7 @@ func (r *Resolver) Query(server string, question dns.Question) (*dns.Message, er
 	}
 
 	address := net.JoinHostPort(server, "53")
-	conn, err := net.DialTimeout("udp", address, r.Timeout)
+	conn, err := net.Dial("udp", address)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (r *Resolver) resolve(domain string, qtype dns.Type, depth int, lk *lookup)
 				}
 				resp.Answers = append(resp.Answers, cnameResp.Answers...)
 				resp.Authorities = cnameResp.Authorities
-				resp.Header.RCode = cnameResp.Header.RCode // NXDOMAIN цели не должен стать NOERROR
+				resp.Header.RCode = cnameResp.Header.RCode
 				return resp, nil
 			}
 		}

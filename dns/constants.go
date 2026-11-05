@@ -44,7 +44,7 @@ const (
 /*
 RCodeNoError        (0) - Успех. Ошибок нет, записи найдены (или пустой ответ).
 RCodeFormatError    (1) - Сервер не смог распарсить входящий запрос.
-RCodeServerFailure  (2) - ServFail. Внутренний сбой сервера .
+RCodeServerFailure  (2) - ServFail. Внутренний сбой сервера.
 RCodeNameError      (3) - NXDomain. Запрашиваемое доменное имя не существует.
 RCodeNotImplemented (4) - Тип запроса (Opcode) не поддерживается этим сервером.
 RCodeRefused        (5) - Сервер отказывается отвечать (например, закрыт рекурсивный доступ).
