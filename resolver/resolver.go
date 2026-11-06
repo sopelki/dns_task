@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"dns_task/dns"
@@ -15,10 +17,10 @@ const (
 	maxQueries = 30 // всего запросов к серверам на один клиентский вызов
 )
 
-
 var (
-	ErrNoAnswers       = errors.New("no answers and no authority records found")
-	ErrMaxHopsExceeded = errors.New("maximum iterative hops exceeded")
+	ErrNoAnswers        = errors.New("no answers and no authority records found")
+	ErrMaxHopsExceeded  = errors.New("maximum iterative hops exceeded")
+	ErrAllServersFailed = errors.New("all DNS servers failed")
 )
 
 var RootServers = []string{
@@ -46,7 +48,7 @@ func NewResolver(timeout time.Duration) *Resolver {
 func (r *Resolver) Query(server string, question dns.Question) (*dns.Message, error) {
 	var id uint16
 	if err := binary.Read(rand.Reader, binary.BigEndian, &id); err != nil {
-		id = 1234 // Если не получилось взять рандомное число.
+		return nil, err
 	}
 
 	message := dns.NewMessage()
@@ -89,6 +91,25 @@ func (r *Resolver) Query(server string, question dns.Question) (*dns.Message, er
 	}
 	return resp, nil
 }
+func (r *Resolver) queryAny(servers []string, question dns.Question, lk *lookup) (*dns.Message, error) {
+	var lastErr error
+	for _, server := range servers {
+		if lk.queries >= maxQueries {
+			return nil, ErrMaxHopsExceeded
+		}
+		lk.queries++
+
+		resp, err := r.Query(server, question)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = errors.New("no DNS servers to query")
+	}
+	return nil, fmt.Errorf("%w: %v", ErrAllServersFailed, lastErr)
+}
 
 func (r *Resolver) Resolve(domain string, qtype dns.Type) (*dns.Message, error) {
 	return r.resolve(domain, qtype, 0, &lookup{})
@@ -99,16 +120,11 @@ func (r *Resolver) resolve(domain string, qtype dns.Type, depth int, lk *lookup)
 		return nil, ErrMaxHopsExceeded
 	}
 
-	currentServer := RootServers[0]
+	servers := RootServers
 	question := dns.Question{Name: domain, Type: qtype, Class: dns.ClassINET}
 
 	for {
-		lk.queries++
-		if lk.queries > maxQueries {
-			return nil, ErrMaxHopsExceeded
-		}
-
-		resp, err := r.Query(currentServer, question)
+		resp, err := r.queryAny(servers, question, lk)
 		if err != nil {
 			return nil, err
 		}
@@ -154,36 +170,41 @@ func (r *Resolver) resolve(domain string, qtype dns.Type, depth int, lk *lookup)
 			return resp, nil // NODATA
 		}
 
-		// Сначала glue из Additional.
-		nextIP := ""
-		for _, add := range resp.Additionals {
-			if add.Type == dns.TypeA {
-				if ip := add.IP(); ip != nil {
-					nextIP = ip.String()
-					break
-				}
-			}
-		}
-
-		// Glue нет, резолвим имя первого NS.
-		if nextIP == "" {
-			nsResp, err := r.resolve(nsRecords[0].Text, dns.TypeA, depth+1, lk)
-			if err != nil {
-				return nil, err
-			}
-			for _, ans := range nsResp.Answers {
-				if ans.Type == dns.TypeA {
-					if ip := ans.IP(); ip != nil {
-						nextIP = ip.String()
-						break
+		// glue для всех NS из Authority
+		var ips []string
+		for _, ns := range nsRecords {
+			for _, add := range resp.Additionals {
+				if add.Type == dns.TypeA && strings.EqualFold(add.Name, ns.Text) {
+					if ip := add.IP(); ip != nil {
+						ips = append(ips, ip.String())
 					}
 				}
 			}
 		}
 
-		if nextIP == "" {
+		// glue нет, резолвим имена NS по очереди, пока кто-то не даст адрес
+		if len(ips) == 0 {
+			for _, ns := range nsRecords {
+				nsResp, err := r.resolve(ns.Text, dns.TypeA, depth+1, lk)
+				if err != nil {
+					continue
+				}
+				for _, ans := range nsResp.Answers {
+					if ans.Type == dns.TypeA {
+						if ip := ans.IP(); ip != nil {
+							ips = append(ips, ip.String())
+						}
+					}
+				}
+				if len(ips) > 0 {
+					break
+				}
+			}
+		}
+
+		if len(ips) == 0 {
 			return nil, ErrNoAnswers
 		}
-		currentServer = nextIP
+		servers = ips
 	}
 }
