@@ -91,6 +91,7 @@ func (r *Resolver) Query(server string, question dns.Question) (*dns.Message, er
 	}
 	return resp, nil
 }
+
 func (r *Resolver) queryAny(servers []string, question dns.Question, lk *lookup) (*dns.Message, error) {
 	var lastErr error
 	for _, server := range servers {

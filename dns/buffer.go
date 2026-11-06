@@ -15,14 +15,14 @@ var (
 )
 
 type Buffer struct {
-	Buffer         []byte
+	Buffer      []byte
 	Offset      int
 	compression map[string]uint16
 }
 
 func NewBuffer(data []byte) *Buffer {
 	return &Buffer{
-		Buffer:         data,
+		Buffer:      data,
 		Offset:      0,
 		compression: make(map[string]uint16),
 	}
@@ -30,7 +30,7 @@ func NewBuffer(data []byte) *Buffer {
 
 func NewEmptyBuffer() *Buffer {
 	return &Buffer{
-		Buffer:         make([]byte, 0, 512),
+		Buffer:      make([]byte, 0, 512),
 		Offset:      0,
 		compression: make(map[string]uint16),
 	}
